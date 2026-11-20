@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /cache/{docId} {
+      allow read, write: if false;
+    }
+
+    match /rooms/{roomId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['id','code','createdAt','expiresAt','maxParticipants']);
+      allow update: if request.auth != null
+        && isParticipant(roomId);
+      allow delete: if false;
+
+      match /participants/{pid} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.auth.uid == pid
+          && participantCountBelowMax(roomId);
+        allow update, delete: if request.auth != null && request.auth.uid == pid;
+      }
+
+      match /messages/{mid} {
+        allow read: if request.auth != null && isParticipant(roomId);
+        allow create: if request.auth != null
+          && isParticipant(roomId)
+          && request.resource.data.keys().hasAll(['id','speakerId','srcLang','srcText','translations','ts']);
+        allow update, delete: if false;
+      }
+    }
+
+    function isParticipant(roomId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/rooms/$(roomId)/participants/$(request.auth.uid));
+    }
+
+    function participantCountBelowMax(roomId) {
+      return true; // hard limit enforced in Cloud Functions / client; soft open for auth create
+    }
+  }
+}

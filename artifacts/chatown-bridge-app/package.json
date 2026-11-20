@@ -1,0 +1,46 @@
+{
+  "name": "chatown-bridge",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint src",
+    "preview": "vite preview",
+    "dev:api": "node functions/src/local-server.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
+    "test": "node --test functions/tests/*.test.mjs",
+    "test:unit": "node --test functions/tests/cache-key.test.mjs functions/tests/rate-limit.test.mjs functions/tests/message-schema.test.mjs",
+    "format": "prettier -w src functions/src functions/tests",
+    "functions:install": "npm --prefix functions install",
+    "functions:build": "npm --prefix functions run build"
+  },
+  "dependencies": {
+    "docx": "^9.16.0",
+    "firebase": "^13.4.0",
+    "idb": "^8.0.4",
+    "jspdf": "^4.2.1",
+    "pinyin-pro": "^3.29.5",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "uuid": "^14.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^24.19.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "oxlint": "^1.90.0",
+    "prettier": "^3.10.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6",
+    "vite-plugin-pwa": "^2.0.0"
+  },
+  "description": "Live Bangla \u21c4 Chinese translation PWA"
+}
