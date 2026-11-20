@@ -26,14 +26,13 @@ import type {
   AppMode,
   GlossaryEntry,
   Lang,
+  LayoutMode,
   Message,
   Participant,
   Room,
   SpeechStatus,
+  UserLang,
 } from './lib/types'
-
-const SPEAKER_BN = 'local-bn'
-const SPEAKER_ZH = 'local-zh'
 
 type Screen = 'main' | 'lobby' | 'qr'
 
@@ -47,22 +46,56 @@ function parseJoinCodeFromUrl(): string | null {
   }
 }
 
+/** Build full translation map en/bn/zh for a message */
+async function fillTranslations(
+  text: string,
+  from: Lang,
+  glossary: GlossaryEntry[],
+): Promise<{ bn?: string; zh?: string; en?: string }> {
+  const out: { bn?: string; zh?: string; en?: string } = {}
+  out[from] = text
+  const targets: Lang[] = (['en', 'bn', 'zh'] as Lang[]).filter((l) => l !== from)
+  await Promise.all(
+    targets.map(async (to) => {
+      try {
+        const glossHit = glossary.find(
+          (g) =>
+            g.from === from &&
+            g.to === to &&
+            g.source.toLowerCase() === text.toLowerCase(),
+        )
+        if (glossHit) {
+          out[to] = glossHit.target
+          return
+        }
+        const res = await translate(text, from, to)
+        out[to] = ensureGlossary(text, res.translation, from, to, glossary)
+      } catch {
+        /* leave missing */
+      }
+    }),
+  )
+  return out
+}
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [autoPlay, setAutoPlay] = useState(true)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [statusEn, setStatusEn] = useState<SpeechStatus>('idle')
   const [statusBn, setStatusBn] = useState<SpeechStatus>('idle')
   const [statusZh, setStatusZh] = useState<SpeechStatus>('idle')
+  const [interimEn, setInterimEn] = useState('')
   const [interimBn, setInterimBn] = useState('')
   const [interimZh, setInterimZh] = useState('')
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null)
   const [speechOk, setSpeechOk] = useState(true)
 
   const [mode, setMode] = useState<AppMode>('local')
-  /** dual = face-to-face split; boss = boss speaks zh, you hear bn aloud */
-  const [layoutMode, setLayoutMode] = useState<'dual' | 'boss'>('boss')
-  const [lastBnAloud, setLastBnAloud] = useState<string | null>(null)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('boss')
+  const [userLang, setUserLang] = useState<UserLang>('en')
+  const [lastAloud, setLastAloud] = useState<string | null>(null)
   const [screen, setScreen] = useState<Screen>('main')
   const [room, setRoom] = useState<Room | null>(null)
   const [me, setMe] = useState<Participant | null>(null)
@@ -70,11 +103,11 @@ export default function App() {
   const [lobbyBusy, setLobbyBusy] = useState(false)
   const [lobbyError, setLobbyError] = useState<string | null>(null)
   const [initialCode] = useState(() => parseJoinCodeFromUrl())
-
   const [extrasOpen, setExtrasOpen] = useState(false)
   const [showRomanization, setShowRomanization] = useState(false)
   const [glossary, setGlossary] = useState<GlossaryEntry[]>([])
 
+  const speechEn = useRef<SpeechSession | null>(null)
   const speechBn = useRef<SpeechSession | null>(null)
   const speechZh = useRef<SpeechSession | null>(null)
   const autoPlayRef = useRef(autoPlay)
@@ -83,14 +116,16 @@ export default function App() {
   const roomRef = useRef(room)
   const meRef = useRef(me)
   const layoutModeRef = useRef(layoutMode)
+  const userLangRef = useRef(userLang)
   const lastPlayedId = useRef<string | null>(null)
 
   autoPlayRef.current = autoPlay
-  layoutModeRef.current = layoutMode
   glossaryRef.current = glossary
   modeRef.current = mode
   roomRef.current = room
   meRef.current = me
+  layoutModeRef.current = layoutMode
+  userLangRef.current = userLang
 
   const showToast = useCallback((msg: string, ms = 4000) => {
     setToast(msg)
@@ -107,60 +142,75 @@ export default function App() {
 
   const speakingBlocked = Boolean(speakingName)
 
-  // boot
+  const setStatus = (lang: Lang, s: SpeechStatus) => {
+    if (lang === 'en') setStatusEn(s)
+    else if (lang === 'bn') setStatusBn(s)
+    else setStatusZh(s)
+  }
+  const setInterim = (lang: Lang, t: string) => {
+    if (lang === 'en') setInterimEn(t)
+    else if (lang === 'bn') setInterimBn(t)
+    else setInterimZh(t)
+  }
+  const getStatus = (lang: Lang) =>
+    lang === 'en' ? statusEn : lang === 'bn' ? statusBn : statusZh
+  const getInterim = (lang: Lang) =>
+    lang === 'en' ? interimEn : lang === 'bn' ? interimBn : interimZh
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [msgs, ap, rom, layout, gloss] = await Promise.all([
+      const [msgs, ap, rom, layout, ul, gloss] = await Promise.all([
         loadMessages(),
         getSetting('autoPlay', true),
         getSetting('showRomanization', false),
-        getSetting<'dual' | 'boss'>('layoutMode', 'boss'),
+        getSetting<LayoutMode>('layoutMode', 'boss'),
+        getSetting<UserLang>('userLang', 'en'),
         loadGlossary(),
       ])
       if (cancelled) return
       setMessages(msgs)
-      // Boss/meeting default: speak aloud. Respect saved false only in dual mode.
-      const layoutResolved = layout === 'dual' ? 'dual' : 'boss'
+      const layoutResolved: LayoutMode = layout === 'dual' ? 'dual' : 'boss'
       setLayoutMode(layoutResolved)
+      setUserLang(ul === 'bn' ? 'bn' : 'en')
       setAutoPlay(layoutResolved === 'boss' ? true : ap)
       setShowRomanization(rom)
       setGlossary(gloss)
       setSpeechOk(isSpeechSupported())
       if (!isSpeechSupported()) showToast('Speech not supported — use typed input.', 6000)
-      const [bnV, zhV] = await Promise.all([checkVoice('bn'), checkVoice('zh')])
-      const notices = [bnV.notice, zhV.notice].filter(Boolean)
-      if (notices.length) setVoiceNotice(notices.join(' '))
-      if (initialCode) setScreen('lobby')
+      const [enV, bnV, zhV] = await Promise.all([
+        checkVoice('en'),
+        checkVoice('bn'),
+        checkVoice('zh'),
+      ])
+      const notices = [enV.notice, bnV.notice, zhV.notice].filter(Boolean)
+      // only show bn notice if user may need bn, always soft
+      if (bnV.fallback || !bnV.available) {
+        setVoiceNotice(bnV.notice || notices[0] || null)
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [showToast, initialCode])
+  }, [showToast])
 
-  // speech sessions
   useEffect(() => {
-    speechBn.current = new SpeechSession({
-      onInterim: (t) => setInterimBn(t),
-      onStatus: (s) => setStatusBn(s),
-      onError: (e) => {
-        setStatusBn(e.code === 'permission-denied' ? 'denied' : 'error')
-        showToast(e.message)
-        setInterimBn('')
-        void releaseSpeakLock()
-      },
-    })
-    speechZh.current = new SpeechSession({
-      onInterim: (t) => setInterimZh(t),
-      onStatus: (s) => setStatusZh(s),
-      onError: (e) => {
-        setStatusZh(e.code === 'permission-denied' ? 'denied' : 'error')
-        showToast(e.message)
-        setInterimZh('')
-        void releaseSpeakLock()
-      },
-    })
+    const make = (lang: Lang) =>
+      new SpeechSession({
+        onInterim: (t) => setInterim(lang, t),
+        onStatus: (s) => setStatus(lang, s),
+        onError: (e) => {
+          setStatus(lang, e.code === 'permission-denied' ? 'denied' : 'error')
+          showToast(e.message)
+          setInterim(lang, '')
+          void releaseSpeakLock()
+        },
+      })
+    speechEn.current = make('en')
+    speechBn.current = make('bn')
+    speechZh.current = make('zh')
     return () => {
+      speechEn.current?.abort?.()
       speechBn.current?.abort?.()
       speechZh.current?.abort?.()
       stopSpeaking()
@@ -168,8 +218,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // keep final callbacks fresh
   useEffect(() => {
+    speechEn.current?.setCallbacks({
+      onFinal: (t) => {
+        setInterimEn('')
+        void processText(t, 'en')
+      },
+    })
     speechBn.current?.setCallbacks({
       onFinal: (t) => {
         setInterimBn('')
@@ -184,7 +239,6 @@ export default function App() {
     })
   })
 
-  // shared room subscription
   useEffect(() => {
     if (mode !== 'shared' || !room) return
     const unsub = subscribeRoom(room.code, {
@@ -192,21 +246,19 @@ export default function App() {
       onParticipants: setParticipants,
       onMessages: (list) => {
         setMessages(list)
-        // auto-play newest message for my language if from others
         const last = list[list.length - 1]
         if (!last || last.id === lastPlayedId.current) return
         if (!autoPlayRef.current) return
         if (meRef.current && last.speakerId === meRef.current.id) return
-        const myLang = meRef.current?.lang
-        if (!myLang) return
+        const myLang = (meRef.current?.lang || userLangRef.current) as Lang
         const text =
           last.translations[myLang] ||
           (last.srcLang === myLang ? last.srcText : undefined)
         if (text) {
           lastPlayedId.current = last.id
-          if (myLang === 'bn') setLastBnAloud(text)
+          setLastAloud(text)
           unlockAudio()
-          void speak(text, myLang, { rate: myLang === 'bn' ? 0.88 : 0.92 })
+          void speak(text, myLang, { rate: myLang === 'bn' ? 0.88 : 1 })
         }
       },
     })
@@ -237,68 +289,44 @@ export default function App() {
     }
   }
 
-  async function processText(text: string, from: Lang, speakerOverride?: Partial<Message>) {
+  async function processText(text: string, from: Lang) {
     const trimmed = text.trim()
     if (!trimmed) {
+      setStatusEn('idle')
       setStatusBn('idle')
       setStatusZh('idle')
       await releaseSpeakLock()
       return
     }
-    const to: Lang = from === 'bn' ? 'zh' : 'bn'
     setBusy(true)
-    if (from === 'bn') setStatusBn('processing')
-    else setStatusZh('processing')
+    setStatus(from, 'processing')
 
     const t0 = performance.now()
     try {
-      let translation: string
-      // phrase-like exact glossary hit
-      const glossHit = glossaryRef.current.find(
-        (g) =>
-          g.from === from &&
-          g.to === to &&
-          g.source.toLowerCase() === trimmed.toLowerCase(),
-      )
-      if (glossHit) {
-        translation = glossHit.target
-      } else {
-        const res = await translate(trimmed, from, to)
-        translation = ensureGlossary(trimmed, res.translation, from, to, glossaryRef.current)
-      }
-
+      const translations = await fillTranslations(trimmed, from, glossaryRef.current)
       const msg: Message = {
         id: uuidv4(),
         speakerId:
-          speakerOverride?.speakerId ||
-          (modeRef.current === 'shared' && meRef.current
+          modeRef.current === 'shared' && meRef.current
             ? meRef.current.id
-            : from === 'bn'
-              ? SPEAKER_BN
-              : SPEAKER_ZH),
+            : `local-${from}`,
         speakerName:
-          speakerOverride?.speakerName ||
-          (modeRef.current === 'shared' && meRef.current
+          modeRef.current === 'shared' && meRef.current
             ? meRef.current.speakerLabel || meRef.current.name
-            : from === 'bn'
-              ? 'বাংলা'
-              : '中文'),
+            : from.toUpperCase(),
         srcLang: from,
         srcText: trimmed,
-        translations: {
-          bn: from === 'bn' ? trimmed : translation,
-          zh: from === 'zh' ? trimmed : translation,
-        },
+        translations,
         romanizations: {
-          bn: await romanize(from === 'bn' ? trimmed : translation, 'bn'),
-          zh: await romanize(from === 'zh' ? trimmed : translation, 'zh'),
+          en: translations.en || (from === 'en' ? trimmed : undefined),
+          bn: await romanize(translations.bn || (from === 'bn' ? trimmed : '') || '', 'bn'),
+          zh: await romanize(translations.zh || (from === 'zh' ? trimmed : '') || '', 'zh'),
         },
         ts: Date.now(),
       }
 
       if (modeRef.current === 'shared' && roomRef.current) {
         await postRoomMessage(roomRef.current.code, msg)
-        // subscription will update list; optimistic:
         setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
       } else {
         setMessages((prev) => [...prev, msg])
@@ -306,22 +334,35 @@ export default function App() {
       }
 
       const elapsed = performance.now() - t0
-      if (elapsed > 4000) {
-        console.warn(`[perf] translation ${elapsed.toFixed(0)}ms`)
-      }
+      if (elapsed > 4000) console.warn(`[perf] ${elapsed.toFixed(0)}ms`)
 
-      // Boss / meeting: always speak the side you need to understand
+      // Aloud: boss mode prefers user's language; otherwise speak the "other" side
       const lm = layoutModeRef.current
+      const ul = userLangRef.current
       const shouldSpeak = autoPlayRef.current || lm === 'boss'
       if (shouldSpeak) {
+        let aloudLang: Lang
+        let aloudText: string
+        if (lm === 'boss') {
+          // Chinese in → my lang out; my lang in → Chinese out (for reply check we speak zh to confirm)
+          if (from === 'zh') {
+            aloudLang = ul
+            aloudText = translations[ul] || translations.en || trimmed
+          } else {
+            aloudLang = 'zh'
+            aloudText = translations.zh || trimmed
+          }
+        } else {
+          // dual: speak opposite of source toward china/user
+          aloudLang = from === 'zh' ? ul : 'zh'
+          aloudText =
+            (aloudLang === 'zh' ? translations.zh : translations[aloudLang]) || trimmed
+        }
         lastPlayedId.current = msg.id
-        const aloudLang = lm === 'boss' ? ('bn' as const) : to
-        const aloudText =
-          lm === 'boss' ? msg.translations.bn || translation : translation
-        if (aloudLang === 'bn') setLastBnAloud(aloudText)
+        setLastAloud(aloudText)
         unlockAudio()
         const result = await speak(aloudText, aloudLang, {
-          rate: aloudLang === 'bn' ? 0.88 : 0.92,
+          rate: aloudLang === 'bn' ? 0.88 : aloudLang === 'zh' ? 0.92 : 1,
         })
         if (!result.ok && result.notice) showToast(result.notice)
       }
@@ -329,7 +370,7 @@ export default function App() {
       const m =
         err instanceof ApiError
           ? err.code === 'rate_limit'
-            ? 'Rate limit — wait a moment and try again.'
+            ? 'Rate limit — wait a moment.'
             : err.message
           : err instanceof Error
             ? err.message
@@ -337,10 +378,15 @@ export default function App() {
       showToast(m)
     } finally {
       setBusy(false)
+      setStatusEn('idle')
       setStatusBn('idle')
       setStatusZh('idle')
       await releaseSpeakLock()
     }
+  }
+
+  function sessionFor(lang: Lang) {
+    return lang === 'en' ? speechEn : lang === 'bn' ? speechBn : speechZh
   }
 
   function startMic(lang: Lang) {
@@ -351,30 +397,29 @@ export default function App() {
     unlockAudio()
     stopSpeaking()
     void acquireSpeakLock()
-    if (lang === 'bn') {
-      speechZh.current?.abort?.()
-      setStatusZh('idle')
-      speechBn.current?.start('bn')
-    } else {
-      speechBn.current?.abort?.()
-      setStatusBn('idle')
-      speechZh.current?.start('zh')
-    }
+    // stop others
+    ;(['en', 'bn', 'zh'] as Lang[]).forEach((l) => {
+      if (l !== lang) {
+        sessionFor(l).current?.abort?.()
+        setStatus(l, 'idle')
+      }
+    })
+    sessionFor(lang).current?.start(lang)
   }
 
   function stopMic(lang: Lang) {
-    if (lang === 'bn') speechBn.current?.stop()
-    else speechZh.current?.stop()
+    sessionFor(lang).current?.stop()
   }
 
   async function handleClear() {
-    if (!confirm('Clear local transcript? (Shared room history stays on server until TTL)')) return
+    if (!confirm('Clear transcript?')) return
     if (mode === 'local') {
       await clearMessages()
       setMessages([])
+      setLastAloud(null)
     } else {
-      showToast('Clear only affects local cache; leave room to reset view')
       setMessages([])
+      setLastAloud(null)
     }
   }
 
@@ -405,7 +450,7 @@ export default function App() {
       const url = new URL(window.location.href)
       url.searchParams.set('room', res.room.code)
       window.history.replaceState({}, '', url.toString())
-      showToast(`Room ${res.room.code} created (${roomsBackend()})`)
+      showToast(`Room ${res.room.code} (${roomsBackend()})`)
     } catch (e) {
       setLobbyError(e instanceof Error ? e.message : 'Create failed')
     } finally {
@@ -445,21 +490,18 @@ export default function App() {
     void loadMessages().then(setMessages)
   }
 
-  function upgradeToShared() {
-    setScreen('lobby')
-  }
-
   const shareUrl =
     room && typeof window !== 'undefined'
       ? `${window.location.origin}${window.location.pathname}?room=${room.code}`
       : ''
 
-  // Shared mode: one panel for my language. Local mode: dual split-screen.
   const sharedSingleLang = mode === 'shared' && Boolean(me)
+  const mineStatus = getStatus(userLang)
+  const mineInterim = getInterim(userLang)
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full min-h-[100dvh] flex-col bg-slate-950 text-slate-100">
+      <div className="flex h-full min-h-[100dvh] flex-col text-slate-100">
         <Header
           autoPlay={autoPlay}
           onAutoPlayChange={handleAutoPlay}
@@ -469,11 +511,11 @@ export default function App() {
               ? 'Shared'
               : layoutMode === 'boss'
                 ? 'Boss · aloud'
-                : 'Local dual'
+                : 'Dual'
           }
           roomCode={room?.code}
           speakingName={speakingName}
-          onShare={mode === 'shared' && room ? () => setScreen('qr') : upgradeToShared}
+          onShare={mode === 'shared' && room ? () => setScreen('qr') : () => setScreen('lobby')}
           onLobby={() => setScreen(screen === 'lobby' ? 'main' : 'lobby')}
           onExtras={() => setExtrasOpen(true)}
           layoutMode={layoutMode}
@@ -483,14 +525,24 @@ export default function App() {
             if (m === 'boss') {
               setAutoPlay(true)
               void setSetting('autoPlay', true)
-              showToast('Boss mode: Chinese in → Bangla spoken aloud')
+              showToast(
+                userLang === 'bn'
+                  ? 'Boss mode: 中文 → বাংলা aloud'
+                  : 'Boss mode: 中文 → English aloud',
+              )
             }
+          }}
+          userLang={userLang}
+          onUserLangChange={(l) => {
+            setUserLang(l)
+            void setSetting('userLang', l)
+            showToast(l === 'bn' ? 'Output language: বাংলা' : 'Output language: English')
           }}
         />
 
-        {voiceNotice && (
+        {voiceNotice && userLang === 'bn' && (
           <div
-            className="border-b border-amber-800/40 bg-amber-950/40 px-3 py-1.5 text-center text-[11px] text-amber-200"
+            className="border-b border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-center text-[11px] text-amber-100"
             role="status"
           >
             {voiceNotice}
@@ -498,11 +550,8 @@ export default function App() {
         )}
 
         {!speechOk && (
-          <div
-            className="border-b border-slate-700 bg-slate-900 px-3 py-1.5 text-center text-[11px] text-slate-300"
-            role="status"
-          >
-            Mic speech unavailable — typed input works.
+          <div className="border-b border-white/5 bg-slate-900/80 px-3 py-1.5 text-center text-[11px] text-slate-300">
+            Mic unavailable — type messages below.
           </div>
         )}
 
@@ -522,36 +571,23 @@ export default function App() {
 
         {screen === 'qr' && room && (
           <div className="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto px-4 py-6">
-            <p className="text-sm text-slate-300">Scan to join · backend: {roomsBackend()}</p>
+            <p className="text-sm text-slate-300">Scan to join · {roomsBackend()}</p>
             <QRCodeCard url={shareUrl} code={room.code} />
-            <p className="text-xs text-slate-500">
-              {participants.length} participant{participants.length === 1 ? '' : 's'} · max 10
-            </p>
-            <ul className="w-full max-w-sm text-sm text-slate-400">
-              {participants.map((p) => (
-                <li key={p.id} className="flex justify-between border-b border-slate-800 py-1">
-                  <span>
-                    {p.name}
-                    {p.speakerLabel ? ` (${p.speakerLabel})` : ''}
-                  </span>
-                  <span>{p.lang}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-xs text-slate-500">{participants.length} / 10 participants</p>
             <div className="flex gap-2">
               <button
                 type="button"
-                className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold"
+                className="rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950"
                 onClick={() => setScreen('main')}
               >
                 Continue
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-slate-600 px-4 py-2 text-sm"
+                className="rounded-xl bg-white/5 px-4 py-2 text-sm ring-1 ring-white/10"
                 onClick={leaveRoom}
               >
-                Leave room
+                Leave
               </button>
             </div>
           </div>
@@ -560,12 +596,11 @@ export default function App() {
         {screen === 'main' && (
           <>
             {mode === 'shared' && me && (
-              <div className="flex items-center justify-between border-b border-slate-800 px-3 py-1 text-[11px] text-slate-400">
+              <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5 text-[11px] text-slate-400">
                 <span>
-                  You: {me.name}
-                  {me.speakerLabel ? ` · ${me.speakerLabel}` : ''} · {me.lang}
+                  You: {me.name} · {me.lang.toUpperCase()}
                 </span>
-                <button type="button" className="text-teal-400" onClick={leaveRoom}>
+                <button type="button" className="text-teal-300" onClick={leaveRoom}>
                   Leave
                 </button>
               </div>
@@ -574,21 +609,26 @@ export default function App() {
             {layoutMode === 'boss' && mode === 'local' ? (
               <BossListenPanel
                 messages={messages}
-                status={statusZh}
-                interim={interimZh}
+                userLang={userLang}
+                statusZh={statusZh}
+                statusMine={mineStatus}
+                interimZh={interimZh}
+                interimMine={mineInterim}
                 disabled={busy || speakingBlocked}
-                lastTranslation={lastBnAloud}
-                onHoldStart={() => startMic('zh')}
-                onHoldEnd={() => stopMic('zh')}
+                lastTranslation={lastAloud}
+                onHoldZhStart={() => startMic('zh')}
+                onHoldZhEnd={() => stopMic('zh')}
+                onHoldMineStart={() => startMic(userLang)}
+                onHoldMineEnd={() => stopMic(userLang)}
                 onReplay={() => {
-                  if (!lastBnAloud) return
+                  if (!lastAloud) return
                   unlockAudio()
-                  void speak(lastBnAloud, 'bn', { rate: 0.88 })
+                  void speak(lastAloud, userLang, { rate: userLang === 'bn' ? 0.88 : 1 })
                 }}
                 banner={
-                  statusZh === 'denied'
-                    ? 'Mic denied — allow microphone for Chinese speech'
-                    : voiceNotice
+                  statusZh === 'denied' || mineStatus === 'denied'
+                    ? 'Microphone denied — enable mic or type'
+                    : null
                 }
                 showRomanization={showRomanization}
               />
@@ -606,16 +646,15 @@ export default function App() {
                   banner={statusZh === 'denied' ? 'Mic denied' : null}
                   showRomanization={showRomanization}
                 />
-                <div className="h-px shrink-0 bg-slate-700" aria-hidden />
+                <div className="h-px shrink-0 bg-white/10" aria-hidden />
                 <SpeakerPanel
-                  lang="bn"
+                  lang={userLang}
                   messages={messages}
-                  status={statusBn}
-                  interim={interimBn}
+                  status={mineStatus}
+                  interim={mineInterim}
                   disabled={busy || speakingBlocked}
-                  onPressStart={() => startMic('bn')}
-                  onPressEnd={() => stopMic('bn')}
-                  banner={statusBn === 'denied' ? 'Mic denied' : null}
+                  onPressStart={() => startMic(userLang)}
+                  onPressEnd={() => stopMic(userLang)}
                   showRomanization={showRomanization}
                 />
               </div>
@@ -624,8 +663,8 @@ export default function App() {
                 <SpeakerPanel
                   lang={me!.lang}
                   messages={messages}
-                  status={me!.lang === 'bn' ? statusBn : statusZh}
-                  interim={me!.lang === 'bn' ? interimBn : interimZh}
+                  status={getStatus(me!.lang)}
+                  interim={getInterim(me!.lang)}
                   disabled={busy || speakingBlocked}
                   onPressStart={() => startMic(me!.lang)}
                   onPressEnd={() => stopMic(me!.lang)}
@@ -636,7 +675,8 @@ export default function App() {
 
             <TextInputBar
               disabled={busy || speakingBlocked}
-              defaultLang={me?.lang || (layoutMode === 'boss' ? 'zh' : 'bn')}
+              defaultLang={layoutMode === 'boss' ? 'zh' : userLang}
+              allowedLangs={['en', 'bn', 'zh']}
               onSend={handleSend}
             />
           </>
@@ -646,7 +686,7 @@ export default function App() {
           open={extrasOpen}
           onClose={() => setExtrasOpen(false)}
           messages={messages}
-          viewLang={me?.lang || 'bn'}
+          viewLang={userLang}
           showRomanization={showRomanization}
           onShowRomanization={(v) => {
             setShowRomanization(v)
@@ -654,32 +694,29 @@ export default function App() {
           }}
           glossary={glossary}
           onGlossaryChange={setGlossary}
-          onUsePhrase={(bn, zh, from) => {
+          onUsePhrase={(phrase, from) => {
             void (async () => {
-              const text = from === 'bn' ? bn : zh
+              const text = phrase[from] || phrase.en
               const msg: Message = {
                 id: uuidv4(),
-                speakerId: me?.id || (from === 'bn' ? SPEAKER_BN : SPEAKER_ZH),
-                speakerName: me?.name || (from === 'bn' ? 'বাংলা' : '中文'),
+                speakerId: me?.id || 'phrase',
+                speakerName: me?.name || 'Phrase',
                 srcLang: from,
                 srcText: text,
-                translations: { bn, zh },
-                romanizations: {
-                  bn: await romanize(bn, 'bn'),
-                  zh: await romanize(zh, 'zh'),
-                },
+                translations: { en: phrase.en, bn: phrase.bn, zh: phrase.zh },
                 ts: Date.now(),
               }
               if (mode === 'shared' && room) {
                 await postRoomMessage(room.code, msg)
-                setMessages((p) => (p.some((m) => m.id === msg.id) ? p : [...p, msg]))
+                setMessages((p) => [...p, msg])
               } else {
                 setMessages((p) => [...p, msg])
                 await saveMessage(msg)
               }
               if (autoPlay) {
-                const to: typeof from = from === 'bn' ? 'zh' : 'bn'
-                await speak(to === 'bn' ? bn : zh, to)
+                const aloud = phrase[userLang] || phrase.en
+                setLastAloud(aloud)
+                await speak(aloud, userLang)
               }
             })()
           }}
@@ -687,7 +724,7 @@ export default function App() {
 
         {toast && (
           <div
-            className="pointer-events-none fixed bottom-20 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 rounded-xl bg-slate-800 px-4 py-2 text-center text-sm text-slate-100 shadow-xl ring-1 ring-slate-600"
+            className="pointer-events-none fixed bottom-24 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 rounded-2xl bg-slate-900/95 px-4 py-2.5 text-center text-sm text-white shadow-2xl ring-1 ring-white/10"
             role="status"
             aria-live="assertive"
           >

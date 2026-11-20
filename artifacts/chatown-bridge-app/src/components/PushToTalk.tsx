@@ -10,8 +10,19 @@ interface Props {
 }
 
 const LABELS: Record<Lang, { title: string; hold: string }> = {
+  en: { title: 'EN', hold: 'Hold to speak English' },
   bn: { title: 'বাংলা', hold: 'Hold to speak Bangla' },
   zh: { title: '中文', hold: 'Hold to speak Chinese' },
+}
+
+function micColor(lang: Lang, listening: boolean): string {
+  if (lang === 'zh') {
+    return listening ? 'bg-red-500' : 'bg-red-600 hover:bg-red-500'
+  }
+  if (lang === 'bn') {
+    return listening ? 'bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-500'
+  }
+  return listening ? 'bg-sky-500' : 'bg-sky-600 hover:bg-sky-500'
 }
 
 export function PushToTalk({
@@ -24,14 +35,7 @@ export function PushToTalk({
 }: Props) {
   const listening = status === 'listening'
   const processing = status === 'processing'
-  const color =
-    lang === 'bn'
-      ? listening
-        ? 'bg-emerald-500'
-        : 'bg-emerald-700 hover:bg-emerald-600'
-      : listening
-        ? 'bg-red-500'
-        : 'bg-red-700 hover:bg-red-600'
+  const color = micColor(lang, listening)
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -40,7 +44,7 @@ export function PushToTalk({
         disabled={disabled || processing}
         aria-label={LABELS[lang].hold}
         aria-pressed={listening}
-        className={`ptt-btn flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-transform active:scale-95 disabled:opacity-50 sm:h-20 sm:w-20 ${color} ${
+        className={`ptt-btn flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg shadow-black/30 transition-transform active:scale-95 disabled:opacity-50 sm:h-[4.5rem] sm:w-[4.5rem] ${color} ${
           listening ? 'ptt-active scale-105' : ''
         }`}
         onPointerDown={(e) => {
@@ -57,7 +61,11 @@ export function PushToTalk({
       >
         <MicIcon listening={listening} />
       </button>
-      <span className={`text-xs font-medium ${lang === 'bn' ? 'font-bn' : 'font-zh'}`}>
+      <span
+        className={`text-xs font-semibold ${
+          lang === 'bn' ? 'font-bn' : lang === 'zh' ? 'font-zh' : 'font-en'
+        }`}
+      >
         {LABELS[lang].title}
       </span>
       {listening && (

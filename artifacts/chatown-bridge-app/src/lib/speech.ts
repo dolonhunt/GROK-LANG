@@ -20,6 +20,7 @@ export function isSpeechSupported(): boolean {
 }
 
 const LANG_MAP: Record<Lang, string> = {
+  en: 'en-US',
   bn: 'bn-BD',
   zh: 'zh-CN',
 }

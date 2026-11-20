@@ -1,97 +1,142 @@
-import type { Lang, Message, SpeechStatus } from '../lib/types'
+import type { Lang, Message, SpeechStatus, UserLang } from '../lib/types'
+import { LANG_LABEL } from '../lib/types'
 import { Transcript } from './Transcript'
 import { PushToTalk } from './PushToTalk'
+import { displayFontClass } from '../lib/lang'
 
 interface Props {
   messages: Message[]
-  status: SpeechStatus
-  interim?: string
+  userLang: UserLang
+  statusZh: SpeechStatus
+  statusMine: SpeechStatus
+  interimZh?: string
+  interimMine?: string
   disabled?: boolean
   lastTranslation?: string | null
-  onHoldStart: () => void
-  onHoldEnd: () => void
+  onHoldZhStart: () => void
+  onHoldZhEnd: () => void
+  onHoldMineStart: () => void
+  onHoldMineEnd: () => void
   onReplay: () => void
   banner?: string | null
   showRomanization?: boolean
 }
 
-/**
- * One-phone “boss talks Chinese → I hear Bangla aloud” layout.
- * Big Bangla line + hold-to-listen on Chinese mic.
- */
 export function BossListenPanel({
   messages,
-  status,
-  interim,
+  userLang,
+  statusZh,
+  statusMine,
+  interimZh,
+  interimMine,
   disabled,
   lastTranslation,
-  onHoldStart,
-  onHoldEnd,
+  onHoldZhStart,
+  onHoldZhEnd,
+  onHoldMineStart,
+  onHoldMineEnd,
   onReplay,
   banner,
   showRomanization,
 }: Props) {
+  const font = displayFontClass(userLang)
+  const listening = statusZh === 'listening' || statusMine === 'listening'
+  const processing = statusZh === 'processing' || statusMine === 'processing'
+
   return (
-    <section
-      className="flex min-h-0 flex-1 flex-col bg-gradient-to-b from-red-950/40 via-slate-950 to-emerald-950/30"
-      aria-label="Boss listen mode"
-    >
-      <div className="border-b border-slate-800 px-3 py-2 text-center">
-        <p className="text-xs font-medium text-amber-200">Boss mode · 老板说中文 → আপনি শুনবেন বাংলায়</p>
-        <p className="mt-0.5 text-[11px] text-slate-400">
-          Hold the red mic while your boss speaks. Translation plays aloud automatically.
-        </p>
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Boss listen mode">
+      <div className="mx-3 mt-3 card rounded-2xl px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-300/90">
+              Meeting · Boss mode
+            </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Boss 中文 → you hear <span className="text-slate-200">{LANG_LABEL[userLang]}</span> aloud.
+              Reply in {LANG_LABEL[userLang]} → 中文.
+            </p>
+          </div>
+          <span className="chip bg-red-500/15 text-red-200 ring-1 ring-red-500/20">中文</span>
+        </div>
         {banner && (
-          <p className="mt-1 text-[11px] text-amber-300" role="status">
+          <p className="mt-2 text-[11px] text-amber-200" role="status">
             {banner}
           </p>
         )}
       </div>
 
-      {/* Live big Bangla output */}
-      <div className="mx-3 mt-3 rounded-2xl border border-emerald-800/50 bg-emerald-950/40 px-4 py-4 shadow-inner">
-        <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-emerald-400/80">
-          <span>Translation · অনুবাদ (বাংলা)</span>
+      {/* Live translation card */}
+      <div className="mx-3 mt-3 rounded-2xl bg-gradient-to-br from-teal-500/20 via-slate-900/80 to-blue-600/10 px-4 py-4 ring-1 ring-teal-500/25">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-200/80">
+            Live · {LANG_LABEL[userLang]}
+          </span>
           <button
             type="button"
             onClick={onReplay}
             disabled={!lastTranslation}
-            className="rounded-lg bg-emerald-700/80 px-2 py-1 text-[11px] font-semibold normal-case text-white disabled:opacity-30"
+            className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white ring-1 ring-white/15 disabled:opacity-30"
             aria-label="Play translation again"
           >
             🔊 Again
           </button>
         </div>
-        <p className="font-bn min-h-[3.5rem] text-xl font-semibold leading-relaxed text-emerald-50 sm:text-2xl">
+        <p className={`${font} min-h-[4rem] text-[1.35rem] font-semibold leading-snug text-white sm:text-2xl`}>
           {lastTranslation ||
-            (status === 'listening'
-              ? interim
-                ? `… ${interim}`
-                : 'শুনছি… Listening…'
-              : status === 'processing'
-                ? 'অনুবাদ হচ্ছে…'
-                : 'Boss-এর কথা এখানে বাংলায় শোনাবে')}
+            (statusZh === 'listening'
+              ? interimZh
+                ? `… ${interimZh}`
+                : 'Listening to Chinese…'
+              : statusMine === 'listening'
+                ? interimMine
+                  ? `… ${interimMine}`
+                  : `Listening (${LANG_LABEL[userLang]})…`
+                : processing
+                  ? 'Translating…'
+                  : userLang === 'bn'
+                    ? 'Boss-এর কথা এখানে শোনাবে'
+                    : 'Boss’s words will appear here')}
         </p>
       </div>
 
       <Transcript
         messages={messages}
-        viewLang={'bn' as Lang}
+        viewLang={userLang as Lang}
         showRomanization={showRomanization}
-        emptyHint="Transcript of the meeting appears here."
+        emptyHint="Meeting transcript will show here."
       />
 
-      <div className="flex flex-col items-center gap-1 py-3">
-        <PushToTalk
-          lang="zh"
-          status={status}
-          interim={interim}
-          disabled={disabled}
-          onPressStart={onHoldStart}
-          onPressEnd={onHoldEnd}
-        />
-        <p className="text-[11px] text-slate-400">Hold · boss speaking (中文)</p>
+      {/* Two mics: listen (zh) + reply (en/bn) */}
+      <div className="safe-pb grid grid-cols-2 gap-3 px-4 pb-2 pt-1">
+        <div className="card flex flex-col items-center rounded-2xl py-3">
+          <PushToTalk
+            lang="zh"
+            status={statusZh}
+            interim={interimZh}
+            disabled={disabled || listening && statusZh !== 'listening'}
+            onPressStart={onHoldZhStart}
+            onPressEnd={onHoldZhEnd}
+          />
+          <p className="mt-1 text-center text-[10px] text-slate-400">Hold · Boss speaks</p>
+        </div>
+        <div className="card flex flex-col items-center rounded-2xl py-3">
+          <PushToTalk
+            lang={userLang}
+            status={statusMine}
+            interim={interimMine}
+            disabled={disabled || listening && statusMine !== 'listening'}
+            onPressStart={onHoldMineStart}
+            onPressEnd={onHoldMineEnd}
+          />
+          <p className="mt-1 text-center text-[10px] text-slate-400">
+            Hold · You reply ({LANG_SHORT_SAFE(userLang)})
+          </p>
+        </div>
       </div>
     </section>
   )
+}
+
+function LANG_SHORT_SAFE(l: UserLang) {
+  return l === 'bn' ? 'BN' : 'EN'
 }

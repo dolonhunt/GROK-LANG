@@ -1,31 +1,35 @@
-# Boss mode — China office use
+# Boss / China meeting mode
 
-**You:** understand boss who speaks Chinese, hear Bangla **aloud**.
+**You need:** EN or BN ⇄ Chinese, with **speech aloud**.
 
-## How to use (phone)
+## Setup (30 seconds)
 
-1. Open Chatown Bridge (Chrome/Edge on Android works best).
-2. Ensure header shows **Boss · aloud** (tap **Boss / Dual** to switch).
-3. Keep **auto-play** switch ON (green).
-4. Allow **microphone**.
-5. When boss talks: **hold the red mic** (中文). Release when they pause.
-6. Bangla translation appears in the big green box and **plays aloud**.
-7. Tap **🔊 Again** to replay the last line.
-8. Or paste/type Chinese in the text box → Send → hears Bangla.
+1. Open the app.
+2. Top right: choose **EN** or **BN** (your language).
+3. Keep 🔊 toggle **ON**.
+4. Mode: **Boss** (default).
 
-## Volume / voice tips
+## In the meeting
 
-- Phone volume up; disable silent mode.
-- **Bangla TTS:** Android → Settings → Google → Speech services → **Install বাংলা voice**.  
-  iPhone → Accessibility → Spoken Content → Voices → Bangla.
-- If Bangla voice missing, app still tries to read aloud with another system voice (quality lower).
+| Action | What to do |
+|---|---|
+| Boss speaks Chinese | Hold **red mic (中文)** → release → hear **EN or BN aloud** |
+| You reply | Hold **blue EN** or **green BN** mic → reply is translated to **中文** (spoken) |
+| Missed a line | Tap **🔊 Again** |
+| Type / paste | Language chips EN · BN · 中文 + Send |
 
-## Two phones (shared room)
+## Dual mode
 
-- You: create room, language **বাংলা**.
-- Colleague near boss: join, language **中文**, hold mic for boss.
-- Your phone speaks Bangla when messages arrive.
+Tap **Boss → Dual** for face-to-face split (Chinese flipped on top).
 
-## Privacy
+## Shared room (2 phones)
 
-Only **text** is sent for translation. Microphone audio stays on the phone.
+- Your phone: language EN or BN  
+- Near boss: language 中文 + hold mic  
+- You hear translations aloud on your phone  
+
+## Voices
+
+- English: usually works out of the box  
+- Bangla: install system বাংলা TTS if needed  
+- Chinese: install 中文 TTS for reply confirmation audio  

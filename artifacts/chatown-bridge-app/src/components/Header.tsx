@@ -1,4 +1,5 @@
-import type { Lang } from '../lib/types'
+import type { LayoutMode, UserLang } from '../lib/types'
+import { LANG_SHORT } from '../lib/types'
 
 interface HeaderProps {
   autoPlay: boolean
@@ -10,8 +11,10 @@ interface HeaderProps {
   onShare?: () => void
   onLobby?: () => void
   onExtras?: () => void
-  layoutMode?: 'dual' | 'boss'
-  onLayoutModeChange?: (m: 'dual' | 'boss') => void
+  layoutMode?: LayoutMode
+  onLayoutModeChange?: (m: LayoutMode) => void
+  userLang: UserLang
+  onUserLangChange: (l: UserLang) => void
 }
 
 export function Header({
@@ -26,94 +29,96 @@ export function Header({
   onExtras,
   layoutMode = 'boss',
   onLayoutModeChange,
+  userLang,
+  onUserLangChange,
 }: HeaderProps) {
   return (
-    <header className="safe-pt flex flex-col gap-1 border-b border-slate-800 bg-slate-950/90 px-3 pb-2 pt-2 backdrop-blur">
-      <div className="flex items-center justify-between gap-2">
+    <header className="safe-pt border-b border-white/5 bg-slate-950/70 px-3 pb-2.5 pt-2 backdrop-blur-xl">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="truncate text-base font-bold tracking-tight text-teal-300 sm:text-lg">
-            Chatown Bridge
-          </h1>
-          <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
-            <LangChip lang="bn" />
-            <span aria-hidden>⇄</span>
-            <LangChip lang="zh" />
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
-              {modeLabel}
-              {roomCode ? ` · ${roomCode}` : ''}
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-500/20 text-sm font-bold text-teal-300 ring-1 ring-teal-500/30">
+              CB
             </span>
-          </p>
+            <div className="min-w-0">
+              <h1 className="truncate text-[15px] font-semibold tracking-tight text-white">
+                Chatown Bridge
+              </h1>
+              <p className="text-[11px] text-slate-400">
+                EN / BN ⇄ 中文 · <span className="text-teal-300/90">{modeLabel}</span>
+                {roomCode ? ` · ${roomCode}` : ''}
+              </p>
+            </div>
+          </div>
         </div>
+
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {/* My language EN | BN */}
+          <div
+            className="flex rounded-full bg-slate-900/90 p-0.5 ring-1 ring-white/10"
+            role="group"
+            aria-label="My language"
+          >
+            {(['en', 'bn'] as UserLang[]).map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => onUserLangChange(l)}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                  userLang === l
+                    ? 'bg-teal-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {LANG_SHORT[l]}
+              </button>
+            ))}
+          </div>
+
           {onLayoutModeChange && (
             <button
               type="button"
               onClick={() => onLayoutModeChange(layoutMode === 'boss' ? 'dual' : 'boss')}
-              className="rounded-lg border border-amber-800/60 bg-amber-950/40 px-2 py-1 text-xs text-amber-100 hover:bg-amber-900/50"
-              title="Boss mode: boss speaks Chinese, you hear Bangla aloud"
+              className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-200 ring-1 ring-white/10"
             >
               {layoutMode === 'boss' ? 'Boss' : 'Dual'}
             </button>
           )}
-          {onExtras && (
-            <button
-              type="button"
-              onClick={onExtras}
-              className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-            >
-              Extras
-            </button>
-          )}
-          {onShare && (
-            <button
-              type="button"
-              onClick={onShare}
-              className="rounded-lg border border-teal-800 px-2 py-1 text-xs text-teal-300 hover:bg-teal-950"
-            >
-              Share
-            </button>
-          )}
-          {onLobby && (
-            <button
-              type="button"
-              onClick={onLobby}
-              className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-            >
-              Rooms
-            </button>
-          )}
-          <label className="flex cursor-pointer items-center gap-1 text-xs text-slate-300">
-            <span className="sr-only">Auto-play aloud</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoPlay}
-              aria-label="Speak translation aloud"
-              onClick={() => onAutoPlayChange(!autoPlay)}
-              className={`relative h-6 w-11 rounded-full transition-colors ${
-                autoPlay ? 'bg-teal-600' : 'bg-slate-700'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                  autoPlay ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-          </label>
+
           <button
             type="button"
-            onClick={onClear}
-            className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-            aria-label="Clear transcript"
+            role="switch"
+            aria-checked={autoPlay}
+            aria-label="Speak translation aloud"
+            onClick={() => onAutoPlayChange(!autoPlay)}
+            className={`relative h-7 w-12 rounded-full transition-colors ${
+              autoPlay ? 'bg-teal-500' : 'bg-slate-700'
+            }`}
+            title="Speak aloud"
           >
-            Clear
+            <span
+              className={`absolute top-0.5 left-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[10px] shadow transition-transform ${
+                autoPlay ? 'translate-x-5' : ''
+              }`}
+            >
+              🔊
+            </span>
           </button>
         </div>
       </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {onExtras && (
+          <ActionBtn onClick={onExtras} label="Extras" />
+        )}
+        {onShare && <ActionBtn onClick={onShare} label="Share" accent />}
+        {onLobby && <ActionBtn onClick={onLobby} label="Rooms" />}
+        <ActionBtn onClick={onClear} label="Clear" />
+      </div>
+
       {speakingName && (
         <div
-          className="rounded-lg bg-amber-900/40 px-2 py-1 text-center text-xs text-amber-200"
+          className="mt-2 rounded-xl bg-amber-500/15 px-3 py-1.5 text-center text-xs font-medium text-amber-100 ring-1 ring-amber-500/30"
           role="status"
         >
           {speakingName} is speaking…
@@ -123,17 +128,26 @@ export function Header({
   )
 }
 
-function LangChip({ lang }: { lang: Lang }) {
-  if (lang === 'bn') {
-    return (
-      <span className="font-bn rounded-full bg-emerald-900/60 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-        বাংলা
-      </span>
-    )
-  }
+function ActionBtn({
+  onClick,
+  label,
+  accent,
+}: {
+  onClick: () => void
+  label: string
+  accent?: boolean
+}) {
   return (
-    <span className="font-zh rounded-full bg-red-900/50 px-2 py-0.5 text-[11px] font-medium text-red-300">
-      中文
-    </span>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium ring-1 ${
+        accent
+          ? 'bg-teal-500/15 text-teal-200 ring-teal-500/30'
+          : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10'
+      }`}
+    >
+      {label}
+    </button>
   )
 }

@@ -29,7 +29,8 @@ export function SpeakerPanel({
   showRomanization,
   hideMic,
 }: Props) {
-  const bg = lang === 'bn' ? 'from-emerald-950/40' : 'from-red-950/30'
+  const bg =
+    lang === 'zh' ? 'from-red-950/30' : lang === 'bn' ? 'from-emerald-950/40' : 'from-blue-950/30'
 
   return (
     <section
@@ -41,10 +42,14 @@ export function SpeakerPanel({
       <div className="flex items-center justify-between border-b border-slate-800/60 px-3 py-1.5">
         <span
           className={`text-xs font-semibold tracking-wide ${
-            lang === 'bn' ? 'font-bn text-emerald-300' : 'font-zh text-red-300'
+            lang === 'bn'
+              ? 'font-bn text-emerald-300'
+              : lang === 'zh'
+                ? 'font-zh text-red-300'
+                : 'font-en text-sky-300'
           }`}
         >
-          {lang === 'bn' ? 'বাংলা · Bangla' : '中文 · Chinese'}
+          {lang === 'bn' ? 'বাংলা · Bangla' : lang === 'zh' ? '中文 · Chinese' : 'English'}
         </span>
         {banner && (
           <span className="text-[10px] text-amber-300" role="status">
@@ -58,8 +63,10 @@ export function SpeakerPanel({
         showRomanization={showRomanization}
         emptyHint={
           lang === 'bn'
-            ? 'এখানে অনুবাদ দেখাবে · Hold mic to speak'
-            : '翻译显示在这里 · 按住麦克风说话'
+            ? 'এখানে অনুবাদ দেখাবে · Hold mic'
+            : lang === 'zh'
+              ? '翻译显示在这里 · 按住麦克风'
+              : 'Translations appear here · Hold mic'
         }
       />
       {!hideMic && (

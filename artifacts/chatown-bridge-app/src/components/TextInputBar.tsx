@@ -1,15 +1,24 @@
 import { useState, type FormEvent } from 'react'
 import type { Lang } from '../lib/types'
+import { LANG_SHORT } from '../lib/types'
 
 interface Props {
   defaultLang?: Lang
   disabled?: boolean
   onSend: (text: string, from: Lang) => void
+  allowedLangs?: Lang[]
 }
 
-export function TextInputBar({ defaultLang = 'bn', disabled, onSend }: Props) {
+export function TextInputBar({
+  defaultLang = 'en',
+  disabled,
+  onSend,
+  allowedLangs = ['en', 'bn', 'zh'],
+}: Props) {
   const [text, setText] = useState('')
-  const [from, setFrom] = useState<Lang>(defaultLang)
+  const [from, setFrom] = useState<Lang>(
+    allowedLangs.includes(defaultLang) ? defaultLang : allowedLangs[0]!,
+  )
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -19,25 +28,28 @@ export function TextInputBar({ defaultLang = 'bn', disabled, onSend }: Props) {
     setText('')
   }
 
+  const placeholder =
+    from === 'bn' ? 'লিখুন…' : from === 'zh' ? '输入…' : 'Type a message…'
+
   return (
     <form
       onSubmit={handleSubmit}
-      className="safe-pb flex items-end gap-2 border-t border-slate-800 bg-slate-950/95 px-3 pt-2"
+      className="safe-pb flex items-end gap-2 border-t border-white/5 bg-slate-950/80 px-3 pt-2 backdrop-blur-xl"
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor="from-lang" className="sr-only">
-          Source language
-        </label>
-        <select
-          id="from-lang"
-          value={from}
-          onChange={(e) => setFrom(e.target.value as Lang)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs text-slate-200"
-          aria-label="Source language"
-        >
-          <option value="bn">বাংলা</option>
-          <option value="zh">中文</option>
-        </select>
+      <div className="flex rounded-xl bg-slate-900 p-0.5 ring-1 ring-white/10">
+        {allowedLangs.map((l) => (
+          <button
+            key={l}
+            type="button"
+            onClick={() => setFrom(l)}
+            className={`rounded-lg px-2 py-2 text-[11px] font-semibold ${
+              from === l ? 'bg-teal-500 text-slate-950' : 'text-slate-400'
+            }`}
+            aria-label={`Source ${l}`}
+          >
+            {LANG_SHORT[l]}
+          </button>
+        ))}
       </div>
       <label htmlFor="typed-msg" className="sr-only">
         Type a message
@@ -47,9 +59,9 @@ export function TextInputBar({ defaultLang = 'bn', disabled, onSend }: Props) {
         type="text"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={from === 'bn' ? 'লিখুন…' : '输入…'}
-        className={`min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-teal-500 focus:outline-none ${
-          from === 'bn' ? 'font-bn' : 'font-zh'
+        placeholder={placeholder}
+        className={`min-w-0 flex-1 rounded-xl border-0 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 ring-1 ring-white/10 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50 ${
+          from === 'bn' ? 'font-bn' : from === 'zh' ? 'font-zh' : 'font-en'
         }`}
         disabled={disabled}
         autoComplete="off"
@@ -58,7 +70,7 @@ export function TextInputBar({ defaultLang = 'bn', disabled, onSend }: Props) {
       <button
         type="submit"
         disabled={disabled || !text.trim()}
-        className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-500 disabled:opacity-40"
+        className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/20 hover:bg-teal-400 disabled:opacity-40"
         aria-label="Send message"
       >
         Send

@@ -1,6 +1,6 @@
 /**
  * Provider abstraction: gemini | nllb | google | libre (free chain)
- * Secrets only via process.env — never client.
+ * Supports en | bn | zh
  */
 
 const PROVIDER = (process.env.TRANSLATE_PROVIDER || 'libre').toLowerCase()
@@ -25,7 +25,24 @@ export async function translateText(text, from, to) {
   }
 }
 
-const LANG = { bn: 'bn', zh: 'zh' }
+/** Map app codes → provider codes */
+function toLibre(code) {
+  if (code === 'zh') return 'zh'
+  if (code === 'bn') return 'bn'
+  return 'en'
+}
+
+function toGtx(code) {
+  if (code === 'zh') return 'zh-CN'
+  if (code === 'bn') return 'bn'
+  return 'en'
+}
+
+function toMyMemory(code) {
+  if (code === 'zh') return 'zh-CN'
+  if (code === 'bn') return 'bn'
+  return 'en'
+}
 
 async function freeChain(text, from, to) {
   const errors = []
@@ -44,12 +61,11 @@ async function libreTranslate(text, from, to) {
   const apiKey = process.env.LIBRETRANSLATE_API_KEY || ''
   const body = {
     q: text,
-    source: LANG[from] || from,
-    target: LANG[to] || to,
+    source: toLibre(from),
+    target: toLibre(to),
     format: 'text',
   }
   if (apiKey) body.api_key = apiKey
-
   const res = await fetch(`${base}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,7 +78,7 @@ async function libreTranslate(text, from, to) {
 }
 
 async function myMemoryTranslate(text, from, to) {
-  const pair = `${from === 'zh' ? 'zh-CN' : from}|${to === 'zh' ? 'zh-CN' : to}`
+  const pair = `${toMyMemory(from)}|${toMyMemory(to)}`
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -73,79 +89,71 @@ async function myMemoryTranslate(text, from, to) {
   return out
 }
 
-/** Unofficial Google free endpoint (client=gtx). Last-resort free path only. */
 async function gtxTranslate(text, from, to) {
-  const sl = from === 'zh' ? 'zh-CN' : from
-  const tl = to === 'zh' ? 'zh-CN' : to
+  const sl = toGtx(from)
+  const tl = toGtx(to)
   const url =
     `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=` +
     encodeURIComponent(text)
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 ChatownBridge/0.1' },
+    headers: { 'User-Agent': 'Mozilla/5.0 ChatownBridge/0.2' },
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()
-  // shape: [[["translated","source",...],...], ...]
   if (!Array.isArray(data) || !Array.isArray(data[0])) throw new Error('Bad gtx shape')
   const out = data[0].map((part) => part[0]).join('')
   if (!out) throw new Error('Empty gtx translation')
   return out
 }
 
-const MOCK_BN_ZH = {
-  হ্যালো: '你好',
-  'হ্যালো!': '你好！',
-  ধন্যবাদ: '谢谢',
-  'ধন্যবাদ।': '谢谢。',
-  নমস্কার: '您好',
-  আমি: '我',
-  ভালো: '好',
-  আপনি: '你',
-  কেমন: '怎么样',
-  আছেন: '好吗',
-  'কেমন আছেন?': '你好吗？',
-  'কেমন আছো?': '你好吗？',
-  হ্যাঁ: '是',
-  না: '不',
-  বিদায়: '再见',
-  স্বাগতম: '欢迎',
-  দয়া: '请',
-  করে: '请',
-  'একটু অপেক্ষা করুন': '请稍等',
-  'আমার নাম': '我的名字是',
-  'আপনার নাম কি?': '你叫什么名字？',
-  'আমি বাংলাদেশ থেকে এসেছি': '我来自孟加拉国',
-  'আমি চীন থেকে এসেছি': '我来自中国',
+const MOCK = {
+  // en
+  hello: { en: 'hello', bn: 'হ্যালো', zh: '你好' },
+  thanks: { en: 'thank you', bn: 'ধন্যবাদ', zh: '谢谢' },
+  'thank you': { en: 'thank you', bn: 'ধন্যবাদ', zh: '谢谢' },
+  yes: { en: 'yes', bn: 'হ্যাঁ', zh: '是' },
+  no: { en: 'no', bn: 'না', zh: '不' },
+  goodbye: { en: 'goodbye', bn: 'বিদায়', zh: '再见' },
+  welcome: { en: 'welcome', bn: 'স্বাগতম', zh: '欢迎' },
+  // bn
+  হ্যালো: { en: 'hello', bn: 'হ্যালো', zh: '你好' },
+  ধন্যবাদ: { en: 'thank you', bn: 'ধন্যবাদ', zh: '谢谢' },
+  নমস্কার: { en: 'hello', bn: 'নমস্কার', zh: '您好' },
+  হ্যাঁ: { en: 'yes', bn: 'হ্যাঁ', zh: '是' },
+  না: { en: 'no', bn: 'না', zh: '不' },
+  বিদায়: { en: 'goodbye', bn: 'বিদায়', zh: '再见' },
+  // zh
+  你好: { en: 'hello', bn: 'হ্যালো', zh: '你好' },
+  谢谢: { en: 'thank you', bn: 'ধন্যবাদ', zh: '谢谢' },
+  您好: { en: 'hello', bn: 'নমস্কার', zh: '您好' },
+  是: { en: 'yes', bn: 'হ্যাঁ', zh: '是' },
+  不: { en: 'no', bn: 'না', zh: '不' },
+  再见: { en: 'goodbye', bn: 'বিদায়', zh: '再见' },
+  欢迎: { en: 'welcome', bn: 'স্বাগতম', zh: '欢迎' },
+  我来自孟加拉国: { en: 'I am from Bangladesh', bn: 'আমি বাংলাদেশ থেকে এসেছি', zh: '我来自孟加拉国' },
+  'আমি বাংলাদেশ থেকে এসেছি': {
+    en: 'I am from Bangladesh',
+    bn: 'আমি বাংলাদেশ থেকে এসেছি',
+    zh: '我来自孟加拉国',
+  },
 }
-
-const MOCK_ZH_BN = Object.fromEntries(
-  Object.entries(MOCK_BN_ZH).map(([bn, zh]) => [zh, bn]),
-)
 
 function mockTranslate(text, from, to) {
   const t = text.trim()
-  if (from === 'bn' && to === 'zh') {
-    if (MOCK_BN_ZH[t]) return Promise.resolve(MOCK_BN_ZH[t])
-    // word-ish join
-    const parts = t.split(/\s+/)
-    const mapped = parts.map((p) => MOCK_BN_ZH[p] || p)
-    if (mapped.some((p, i) => p !== parts[i])) return Promise.resolve(mapped.join(''))
-    return Promise.resolve(`[zh] ${t}`)
-  }
-  if (from === 'zh' && to === 'bn') {
-    if (MOCK_ZH_BN[t]) return Promise.resolve(MOCK_ZH_BN[t])
-    if (MOCK_BN_ZH[t]) return Promise.resolve(t) // already?
-    return Promise.resolve(`[bn] ${t}`)
-  }
-  return Promise.resolve(t)
+  const key = t.toLowerCase()
+  const row = MOCK[t] || MOCK[key]
+  if (row && row[to]) return Promise.resolve(row[to])
+  // prefix tag so UI still works offline
+  const tag = { en: '[en]', bn: '[bn]', zh: '[zh]' }
+  return Promise.resolve(`${tag[to] || ''} ${t}`.trim())
 }
 
 async function geminiTranslate(text, from, to) {
   const key = process.env.GEMINI_API_KEY
   if (!key) throw new Error('GEMINI_API_KEY not set')
   const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const langName = { bn: 'Bengali', zh: 'Chinese (Simplified)' }
-  const prompt = `Translate the following ${langName[from]} text to ${langName[to]}. Output ONLY the translation, no quotes or explanation.\n\n${text}`
+  const langName = { bn: 'Bengali', zh: 'Chinese (Simplified)', en: 'English' }
+  const prompt = `Translate the following ${langName[from] || from} text to ${langName[to] || to}. Output ONLY the translation, no quotes or explanation.\n\n${text}`
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     {
@@ -176,8 +184,8 @@ async function googleTranslate(text, from, to) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       q: text,
-      source: from === 'zh' ? 'zh-CN' : from,
-      target: to === 'zh' ? 'zh-CN' : to,
+      source: toGtx(from),
+      target: toGtx(to),
       format: 'text',
     }),
   })
@@ -191,7 +199,7 @@ async function googleTranslate(text, from, to) {
 async function nllbTranslate(text, from, to) {
   const base = process.env.NLLB_URL
   if (!base) throw new Error('NLLB_URL not set')
-  const code = { bn: 'ben_Beng', zh: 'zho_Hans' }
+  const code = { bn: 'ben_Beng', zh: 'zho_Hans', en: 'eng_Latn' }
   const res = await fetch(`${base.replace(/\/$/, '')}/translate`, {
     method: 'POST',
     headers: {
@@ -210,3 +218,5 @@ async function nllbTranslate(text, from, to) {
   if (!out) throw new Error('Empty NLLB translation')
   return out
 }
+
+export const SUPPORTED_LANGS = ['en', 'bn', 'zh']

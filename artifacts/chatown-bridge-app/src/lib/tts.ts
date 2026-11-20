@@ -1,6 +1,7 @@
 import type { Lang } from './types'
 
 const LANG_MAP: Record<Lang, string> = {
+  en: 'en-US',
   bn: 'bn-BD',
   zh: 'zh-CN',
 }
@@ -9,7 +10,6 @@ export interface VoiceInfo {
   available: boolean
   voiceName?: string
   notice?: string
-  /** true if we will use a non-native fallback voice */
   fallback?: boolean
 }
 
@@ -46,12 +46,11 @@ function scoreVoice(v: SpeechSynthesisVoice, lang: Lang): number {
   const target = LANG_MAP[lang].toLowerCase()
   let s = 0
   if (L === target) s += 100
-  if (L.startsWith(lang === 'bn' ? 'bn' : 'zh')) s += 50
-  if (lang === 'bn' && (L.includes('bengali') || L.includes('bangla'))) s += 40
-  if (lang === 'zh' && (L.includes('chinese') || L.includes('cmn'))) s += 40
+  if (lang === 'en' && L.startsWith('en')) s += 60
+  if (lang === 'bn' && (L.startsWith('bn') || L.includes('bengali') || L.includes('bangla'))) s += 60
+  if (lang === 'zh' && (L.startsWith('zh') || L.includes('chinese') || L.includes('cmn'))) s += 60
   if (v.localService) s += 10
   if (v.default) s += 5
-  // prefer female/clear names lightly — skip
   return s
 }
 
@@ -64,18 +63,11 @@ function pickVoice(
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s)
   if (ranked[0]) return { voice: ranked[0].v, fallback: ranked[0].s < 50 }
-
-  // Last resort: any voice (so "aloud" still works for the user)
   if (voices.length) {
     const en = voices.find((v) => v.lang.toLowerCase().startsWith('en'))
     return { voice: en || voices[0]!, fallback: true }
   }
   return { voice: null, fallback: false }
-}
-
-export async function listVoicesBrief(): Promise<string[]> {
-  const voices = await ensureVoices()
-  return voices.map((v) => `${v.name} (${v.lang})`)
 }
 
 export async function checkVoice(lang: Lang): Promise<VoiceInfo> {
@@ -89,8 +81,10 @@ export async function checkVoice(lang: Lang): Promise<VoiceInfo> {
       available: false,
       notice:
         lang === 'bn'
-          ? 'No voice for Bangla. On Android: Settings → Google → Speech → install বাংলা. On iPhone: Settings → Accessibility → Spoken Content → Voices → Bangla.'
-          : 'No Chinese voice installed.',
+          ? 'No Bangla voice. Install বাংলা TTS in system settings.'
+          : lang === 'zh'
+            ? 'No Chinese voice installed.'
+            : 'No English voice installed.',
     }
   }
   if (fallback && lang === 'bn') {
@@ -98,18 +92,13 @@ export async function checkVoice(lang: Lang): Promise<VoiceInfo> {
       available: true,
       voiceName: voice.name,
       fallback: true,
-      notice: `Bangla system voice missing — will read aloud with “${voice.name}” (install বাংলা voice for better quality).`,
+      notice: `Bangla voice missing — using “${voice.name}”. Install বাংলা TTS for better audio.`,
     }
   }
   return { available: true, voiceName: voice.name, fallback }
 }
 
-export type SpeakOptions = {
-  /** 0.6–1.4, default slightly slower for comprehension */
-  rate?: number
-  /** force re-speak even if same text */
-  force?: boolean
-}
+export type SpeakOptions = { rate?: number }
 
 let lastUtteranceText = ''
 
@@ -122,23 +111,19 @@ export async function speak(
   if (!window.speechSynthesis) {
     return { ok: false, notice: 'Speech synthesis not supported.' }
   }
-
   const voices = await ensureVoices()
   const { voice, fallback } = pickVoice(voices, lang)
   if (!voice) {
     const info = await checkVoice(lang)
     return { ok: false, notice: info.notice }
   }
-
   return new Promise((resolve) => {
     window.speechSynthesis.cancel()
-    // Chrome bug: cancel then speak sometimes needs a tick
     const run = () => {
       const u = new SpeechSynthesisUtterance(text)
       u.voice = voice
-      u.lang = fallback && lang === 'bn' ? voice.lang : LANG_MAP[lang]
-      // Boss mode: slower Bangla so you can follow
-      u.rate = opts.rate ?? (lang === 'bn' ? 0.9 : lang === 'zh' ? 0.92 : 1)
+      u.lang = fallback && lang !== 'en' ? voice.lang : LANG_MAP[lang]
+      u.rate = opts.rate ?? (lang === 'zh' ? 0.92 : lang === 'bn' ? 0.9 : 1)
       u.pitch = 1
       u.volume = 1
       lastUtteranceText = text
@@ -158,7 +143,6 @@ export function getLastSpokenText() {
   return lastUtteranceText
 }
 
-/** Unlock audio on iOS — call once from a user tap. */
 export function unlockAudio(): void {
   if (!window.speechSynthesis) return
   try {

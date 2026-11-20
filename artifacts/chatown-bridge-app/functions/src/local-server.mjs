@@ -99,8 +99,9 @@ const server = createServer(async (req, res) => {
       const text = typeof body.text === 'string' ? body.text.trim() : ''
       const from = body.from
       const to = body.to
-      if (!text || !['bn', 'zh'].includes(from) || !['bn', 'zh'].includes(to)) {
-        return sendJson(res, 400, { error: 'Invalid body: need text, from∈{bn,zh}, to∈{bn,zh}' })
+      const OK = ['en', 'bn', 'zh']
+      if (!text || !OK.includes(from) || !OK.includes(to)) {
+        return sendJson(res, 400, { error: 'Invalid body: need text, from/to ∈ {en,bn,zh}' })
       }
       if (from === to) {
         return sendJson(res, 200, { translation: text, cached: true, provider: 'identity' })
@@ -165,7 +166,7 @@ const server = createServer(async (req, res) => {
         uid: body.uid || `p-${code}-host`,
         deviceId: body.deviceId || 'unknown',
         name: body.name || 'Host',
-        lang: body.lang === 'zh' ? 'zh' : 'bn',
+        lang: body.lang === 'zh' ? 'zh' : body.lang === 'en' ? 'en' : 'bn',
         joinedAt: now,
       }
       const entry = {
@@ -192,7 +193,7 @@ const server = createServer(async (req, res) => {
         uid: body.uid || `p-${randomBytes(4).toString('hex')}`,
         deviceId: body.deviceId || 'unknown',
         name: body.name || 'Guest',
-        lang: body.lang === 'zh' ? 'zh' : 'bn',
+        lang: body.lang === 'zh' ? 'zh' : body.lang === 'en' ? 'en' : 'bn',
         speakerLabel: body.speakerLabel,
         joinedAt: Date.now(),
       }
@@ -234,28 +235,23 @@ const server = createServer(async (req, res) => {
         ts: body.ts || Date.now(),
       }
       // fill missing translation once
-      const needBn = !msg.translations.bn
-      const needZh = !msg.translations.zh
-      if (needBn || needZh) {
-        const from = msg.srcLang
-        if (needBn && from === 'bn') msg.translations.bn = msg.srcText
-        if (needZh && from === 'zh') msg.translations.zh = msg.srcText
-        if (needBn && from !== 'bn') {
-          const key = translationCacheKey(from, 'bn', msg.srcText)
-          if (cache.has(key)) msg.translations.bn = cache.get(key).translation
-          else {
-            const t = await translateText(msg.srcText, from, 'bn')
-            cache.set(key, { translation: t, ts: Date.now() })
-            msg.translations.bn = t
-          }
-        }
-        if (needZh && from !== 'zh') {
-          const key = translationCacheKey(from, 'zh', msg.srcText)
-          if (cache.has(key)) msg.translations.zh = cache.get(key).translation
-          else {
-            const t = await translateText(msg.srcText, from, 'zh')
-            cache.set(key, { translation: t, ts: Date.now() })
-            msg.translations.zh = t
+      const from = msg.srcLang
+      msg.translations = msg.translations || {}
+      if (from === 'bn') msg.translations.bn = msg.translations.bn || msg.srcText
+      if (from === 'zh') msg.translations.zh = msg.translations.zh || msg.srcText
+      if (from === 'en') msg.translations.en = msg.translations.en || msg.srcText
+      for (const to of ['en', 'bn', 'zh']) {
+        if (to === from) continue
+        if (msg.translations[to]) continue
+        const key = translationCacheKey(from, to, msg.srcText)
+        if (cache.has(key)) msg.translations[to] = cache.get(key).translation
+        else {
+          try {
+            const tr = await translateText(msg.srcText, from, to)
+            cache.set(key, { translation: tr, ts: Date.now() })
+            msg.translations[to] = tr
+          } catch (e) {
+            console.warn('fill', from, to, e)
           }
         }
       }

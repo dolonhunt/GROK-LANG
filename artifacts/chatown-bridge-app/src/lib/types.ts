@@ -1,5 +1,9 @@
-export type Lang = 'bn' | 'zh'
+export type Lang = 'bn' | 'zh' | 'en'
 export type AppMode = 'local' | 'shared'
+export type LayoutMode = 'boss' | 'dual'
+
+/** Languages the user typically needs for output / UI */
+export type UserLang = 'bn' | 'en'
 
 export interface Message {
   id: string
@@ -7,9 +11,8 @@ export interface Message {
   speakerName?: string
   srcLang: Lang
   srcText: string
-  translations: { bn?: string; zh?: string }
-  /** optional romanization / pinyin of src or translation */
-  romanizations?: { bn?: string; zh?: string }
+  translations: { bn?: string; zh?: string; en?: string }
+  romanizations?: { bn?: string; zh?: string; en?: string }
   ts: number
 }
 
@@ -69,5 +72,31 @@ export interface Phrase {
   id: string
   bn: string
   zh: string
+  en: string
   category: string
 }
+
+export const LANGS: Lang[] = ['en', 'bn', 'zh']
+
+export const LANG_LABEL: Record<Lang, string> = {
+  en: 'English',
+  bn: 'বাংলা',
+  zh: '中文',
+}
+
+export const LANG_SHORT: Record<Lang, string> = {
+  en: 'EN',
+  bn: 'BN',
+  zh: '中文',
+}
+
+export const SPEECH_LOCALE: Record<Lang, string> = {
+  en: 'en-US',
+  bn: 'bn-BD',
+  zh: 'zh-CN',
+}
+
+export function isLang(v: unknown): v is Lang {
+  return v === 'en' || v === 'bn' || v === 'zh'
+}
+

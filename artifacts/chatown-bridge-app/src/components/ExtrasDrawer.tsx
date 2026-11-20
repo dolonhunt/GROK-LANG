@@ -13,7 +13,7 @@ interface Props {
   viewLang: Lang
   showRomanization: boolean
   onShowRomanization: (v: boolean) => void
-  onUsePhrase: (bn: string, zh: string, from: Lang) => void
+  onUsePhrase: (phrase: { en: string; bn: string; zh: string }, from: Lang) => void
   glossary: GlossaryEntry[]
   onGlossaryChange: (g: GlossaryEntry[]) => void
 }
@@ -49,6 +49,7 @@ export function ExtrasDrawer({
       !phraseQ ||
       p.bn.includes(phraseQ) ||
       p.zh.includes(phraseQ) ||
+      p.en.toLowerCase().includes(phraseQ.toLowerCase()) ||
       p.category.toLowerCase().includes(phraseQ.toLowerCase()),
   )
 
@@ -208,29 +209,23 @@ export function ExtrasDrawer({
                   className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm"
                 >
                   <div className="text-[10px] uppercase text-slate-500">{p.category}</div>
+                  <div className="font-en text-sky-200">{p.en}</div>
                   <div className="font-bn text-emerald-200">{p.bn}</div>
                   <div className="font-zh text-red-200">{p.zh}</div>
-                  <div className="mt-1 flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs text-teal-400"
-                      onClick={() => {
-                        onUsePhrase(p.bn, p.zh, 'bn')
-                        onClose()
-                      }}
-                    >
-                      Send as bn
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs text-teal-400"
-                      onClick={() => {
-                        onUsePhrase(p.bn, p.zh, 'zh')
-                        onClose()
-                      }}
-                    >
-                      Send as zh
-                    </button>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {(['en', 'bn', 'zh'] as Lang[]).map((l) => (
+                      <button
+                        key={l}
+                        type="button"
+                        className="text-xs text-teal-400"
+                        onClick={() => {
+                          onUsePhrase({ en: p.en, bn: p.bn, zh: p.zh }, l)
+                          onClose()
+                        }}
+                      >
+                        Send as {l.toUpperCase()}
+                      </button>
+                    ))}
                   </div>
                 </li>
               ))}
